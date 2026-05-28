@@ -1,133 +1,184 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, StyleSheet, ActivityIndicator } from 'react-native';
+import {
+  View, Text, ScrollView,
+  TouchableOpacity, StyleSheet, ActivityIndicator
+} from 'react-native';
 import { collection, getDocs } from 'firebase/firestore';
 import { db } from '../config/firebase';
+import MindCharacter from '../components/MindCharacter';
+import { colors, fonts, radius, shadow } from '../theme';
 
 export default function AdminStatsScreen({ navigation }) {
-  const [data, setData] = useState(null);
+  const [data, setData]     = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const load = async () => {
-      const [usersSnap, sessionsSnap, testsSnap] = await Promise.all([
+      const [uSnap, sSnap, tSnap] = await Promise.all([
         getDocs(collection(db, 'users')),
         getDocs(collection(db, 'sessions')),
         getDocs(collection(db, 'emotional_tests')),
       ]);
-      const users    = usersSnap.docs.map(d => d.data());
-      const sessions = sessionsSnap.docs.map(d => d.data());
-      const tests    = testsSnap.docs.map(d => d.data());
-
+      const users    = uSnap.docs.map(d => d.data());
+      const sessions = sSnap.docs.map(d => d.data());
+      const tests    = tSnap.docs.map(d => d.data());
       const avgScore = tests.length > 0
         ? Math.round(tests.reduce((a, t) => a + (t.score / t.maxScore) * 100, 0) / tests.length)
         : 0;
-
-      const sessionsByStatus = {
-        confirmed: sessions.filter(s => s.status === 'confirmed').length,
-        pending:   sessions.filter(s => s.status === 'pending').length,
-        cancelled: sessions.filter(s => s.status === 'cancelled').length,
-      };
-
-      const resultDistribution = {
-        excelente: tests.filter(t => (t.score / t.maxScore) >= 0.8).length,
-        moderado:  tests.filter(t => (t.score / t.maxScore) >= 0.6 && (t.score / t.maxScore) < 0.8).length,
-        necesita:  tests.filter(t => (t.score / t.maxScore) >= 0.4 && (t.score / t.maxScore) < 0.6).length,
-        critico:   tests.filter(t => (t.score / t.maxScore) < 0.4).length,
-      };
-
-      setData({ users, sessions, tests, avgScore, sessionsByStatus, resultDistribution });
+      setData({
+        users, sessions, tests, avgScore,
+        sessionsByStatus: {
+          confirmed: sessions.filter(s => s.status === 'confirmed').length,
+          pending:   sessions.filter(s => s.status === 'pending').length,
+          cancelled: sessions.filter(s => s.status === 'cancelled').length,
+        },
+        resultDist: {
+          excelente: tests.filter(t => (t.score / t.maxScore) >= 0.8).length,
+          moderado:  tests.filter(t => (t.score / t.maxScore) >= 0.6 && (t.score / t.maxScore) < 0.8).length,
+          necesita:  tests.filter(t => (t.score / t.maxScore) >= 0.4 && (t.score / t.maxScore) < 0.6).length,
+          critico:   tests.filter(t => (t.score / t.maxScore) < 0.4).length,
+        },
+      });
       setLoading(false);
     };
     load();
   }, []);
 
-  if (loading) return <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#F7F0FF' }}><ActivityIndicator size="large" color="#5B2D8E" /></View>;
+  if (loading) return (
+    <View style={{ flex: 1, backgroundColor: colors.cream, justifyContent: 'center', alignItems: 'center' }}>
+      <ActivityIndicator size="large" color={colors.lilac} />
+    </View>
+  );
 
   return (
-    <ScrollView style={{ flex: 1, backgroundColor: '#F7F0FF' }} contentContainerStyle={{ paddingBottom: 40 }}>
+    <ScrollView style={styles.root} contentContainerStyle={{ paddingBottom: 60 }}>
       <View style={styles.header}>
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
-          <Text style={{ color: '#FFD93D', fontSize: 20 }}>←</Text>
+          <Text style={styles.backArrow}>←</Text>
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Estadísticas</Text>
+        <View style={{ width: 40 }} />
       </View>
 
-      {/* Usuarios */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>👥 Usuarios</Text>
-        <View style={styles.row}>
+      <View style={styles.body}>
+
+        {/* Usuarios */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Usuarios</Text>
+          <View style={styles.row}>
+            {[
+              { label: 'Pacientes',  value: data.users.filter(u => u.role === 'patient').length,                   color: colors.soft      },
+              { label: 'Psicólogos', value: data.users.filter(u => u.role === 'psychologist' && u.approved).length, color: colors.happyBg  },
+              { label: 'Pendientes', value: data.users.filter(u => u.role === 'psychologist' && !u.approved).length,color: colors.anxiousBg },
+            ].map(s => (
+              <View key={s.label} style={[styles.miniStat, { backgroundColor: s.color }]}>
+                <Text style={styles.miniStatValue}>{s.value}</Text>
+                <Text style={styles.miniStatLabel}>{s.label}</Text>
+              </View>
+            ))}
+          </View>
+        </View>
+
+        {/* Sesiones */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Sesiones — {data.sessions.length} total</Text>
           {[
-            { label: 'Pacientes',    value: data.users.filter(u => u.role === 'patient').length,                  color: '#EDE0FF' },
-            { label: 'Psicólogos',  value: data.users.filter(u => u.role === 'psychologist' && u.approved).length, color: '#D1FAE5' },
-            { label: 'Pendientes',  value: data.users.filter(u => u.role === 'psychologist' && !u.approved).length, color: '#FEF3C7' },
+            { label: 'Confirmadas', value: data.sessionsByStatus.confirmed, color: colors.happy   },
+            { label: 'Pendientes',  value: data.sessionsByStatus.pending,   color: colors.anxious },
+            { label: 'Canceladas',  value: data.sessionsByStatus.cancelled, color: colors.error   },
           ].map(s => (
-            <View key={s.label} style={[styles.statCard, { backgroundColor: s.color }]}>
-              <Text style={styles.statNum}>{s.value}</Text>
-              <Text style={styles.statLabel}>{s.label}</Text>
+            <View key={s.label} style={styles.barRow}>
+              <Text style={styles.barLabel}>{s.label}</Text>
+              <View style={styles.barBg}>
+                <View style={[styles.barFill, {
+                  width: data.sessions.length > 0
+                    ? `${(s.value / data.sessions.length) * 100}%`
+                    : '0%',
+                  backgroundColor: s.color,
+                }]} />
+              </View>
+              <Text style={[styles.barValue, { color: s.color }]}>{s.value}</Text>
             </View>
           ))}
         </View>
-      </View>
 
-      {/* Sesiones */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>📅 Sesiones ({data.sessions.length} total)</Text>
-        {[
-          { label: 'Confirmadas', value: data.sessionsByStatus.confirmed, color: '#22C55E', max: data.sessions.length },
-          { label: 'Pendientes',  value: data.sessionsByStatus.pending,   color: '#F59E0B', max: data.sessions.length },
-          { label: 'Canceladas',  value: data.sessionsByStatus.cancelled, color: '#EF4444', max: data.sessions.length },
-        ].map(s => (
-          <View key={s.label} style={styles.barRow}>
-            <Text style={styles.barLabel}>{s.label}</Text>
-            <View style={styles.barBg}>
-              <View style={[styles.barFill, { width: s.max > 0 ? `${(s.value / s.max) * 100}%` : '0%', backgroundColor: s.color }]} />
-            </View>
-            <Text style={[styles.barValue, { color: s.color }]}>{s.value}</Text>
+        {/* Tests */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Tests emocionales — {data.tests.length} total</Text>
+
+          <View style={styles.avgWrap}>
+            <MindCharacter
+              mood={data.avgScore >= 80 ? 'happy' : data.avgScore >= 60 ? 'calm' : data.avgScore >= 40 ? 'sad' : 'anxious'}
+              size={80}
+            />
+            <Text style={styles.avgValue}>{data.avgScore}%</Text>
+            <Text style={styles.avgLabel}>Bienestar promedio de pacientes</Text>
           </View>
-        ))}
-      </View>
 
-      {/* Tests emocionales */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>🧠 Tests emocionales ({data.tests.length} total)</Text>
-        <View style={[styles.avgCard, { backgroundColor: data.avgScore >= 80 ? '#D1FAE5' : data.avgScore >= 60 ? '#FEF3C7' : data.avgScore >= 40 ? '#FFEDD5' : '#FEE2E2' }]}>
-          <Text style={{ fontSize: 11, fontWeight: '700', color: '#5A4A6B', letterSpacing: 1 }}>PROMEDIO GENERAL</Text>
-          <Text style={{ fontSize: 48, fontWeight: '900', color: '#1A0A2E', marginTop: 4 }}>{data.avgScore}%</Text>
-          <Text style={{ fontSize: 13, color: '#5A4A6B' }}>Bienestar promedio de los pacientes</Text>
+          {[
+            { label: 'Excelente',       value: data.resultDist.excelente, color: colors.happy   },
+            { label: 'Moderado',        value: data.resultDist.moderado,  color: colors.calm    },
+            { label: 'Necesita apoyo',  value: data.resultDist.necesita,  color: colors.sad     },
+            { label: 'Prioritario',     value: data.resultDist.critico,   color: colors.anxious },
+          ].map(s => (
+            <View key={s.label} style={styles.barRow}>
+              <Text style={[styles.barLabel, { width: 120 }]}>{s.label}</Text>
+              <View style={styles.barBg}>
+                <View style={[styles.barFill, {
+                  width: data.tests.length > 0
+                    ? `${(s.value / data.tests.length) * 100}%`
+                    : '0%',
+                  backgroundColor: s.color,
+                }]} />
+              </View>
+              <Text style={[styles.barValue, { color: s.color }]}>{s.value}</Text>
+            </View>
+          ))}
         </View>
-        {[
-          { label: '🌟 Excelente bienestar',  value: data.resultDistribution.excelente, color: '#22C55E' },
-          { label: '🙂 Bienestar moderado',   value: data.resultDistribution.moderado,  color: '#F59E0B' },
-          { label: '😟 Necesita apoyo',       value: data.resultDistribution.necesita,  color: '#F97316' },
-          { label: '🆘 Atención prioritaria', value: data.resultDistribution.critico,   color: '#EF4444' },
-        ].map(s => (
-          <View key={s.label} style={styles.barRow}>
-            <Text style={[styles.barLabel, { width: 170 }]}>{s.label}</Text>
-            <View style={styles.barBg}>
-              <View style={[styles.barFill, { width: data.tests.length > 0 ? `${(s.value / data.tests.length) * 100}%` : '0%', backgroundColor: s.color }]} />
-            </View>
-            <Text style={[styles.barValue, { color: s.color }]}>{s.value}</Text>
-          </View>
-        ))}
+
       </View>
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  header: { backgroundColor: '#1A0A2E', paddingTop: 50, paddingBottom: 20, paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center', gap: 14 },
-  backBtn: { backgroundColor: 'rgba(255,255,0,0.15)', borderRadius: 18, width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
-  headerTitle: { color: '#FFD93D', fontSize: 17, fontWeight: '800' },
-  section: { backgroundColor: '#fff', margin: 16, borderRadius: 20, padding: 18, elevation: 3 },
-  sectionTitle: { fontSize: 15, fontWeight: '800', color: '#1A0A2E', marginBottom: 14 },
+  root: { flex: 1, backgroundColor: colors.cream },
+  header: {
+    backgroundColor: colors.navy,
+    paddingTop: 56, paddingBottom: 20, paddingHorizontal: 20,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    borderBottomLeftRadius: 32, borderBottomRightRadius: 32,
+  },
+  backBtn: {
+    width: 40, height: 40, borderRadius: 20,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  backArrow: { color: '#fff', fontSize: 20 },
+  headerTitle: { fontFamily: fonts.serif, fontSize: 22, color: '#fff' },
+
+  body: { padding: 20, gap: 16 },
+
+  section: {
+    backgroundColor: colors.white,
+    borderRadius: radius.lg,
+    padding: 18, gap: 12,
+    ...shadow.card,
+  },
+  sectionTitle: { fontFamily: fonts.bold, fontSize: 14, color: colors.navy },
+
   row: { flexDirection: 'row', gap: 10 },
-  statCard: { flex: 1, borderRadius: 14, padding: 14, alignItems: 'center' },
-  statNum: { fontSize: 28, fontWeight: '900', color: '#1A0A2E' },
-  statLabel: { fontSize: 11, color: '#5A4A6B', fontWeight: '600', marginTop: 2, textAlign: 'center' },
-  barRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 12 },
-  barLabel: { fontSize: 12, color: '#5A4A6B', fontWeight: '600', width: 90 },
-  barBg: { flex: 1, height: 10, backgroundColor: '#F7F0FF', borderRadius: 5, overflow: 'hidden' },
+  miniStat: { flex: 1, borderRadius: radius.md, padding: 14, alignItems: 'center', gap: 4 },
+  miniStatValue: { fontFamily: fonts.serif, fontSize: 26, color: colors.navy },
+  miniStatLabel: { fontFamily: fonts.regular, fontSize: 10, color: colors.muted, textAlign: 'center' },
+
+  barRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  barLabel: { fontFamily: fonts.medium, fontSize: 12, color: colors.muted, width: 90 },
+  barBg: { flex: 1, height: 10, backgroundColor: colors.soft, borderRadius: 5, overflow: 'hidden' },
   barFill: { height: 10, borderRadius: 5 },
-  barValue: { fontSize: 13, fontWeight: '800', width: 24, textAlign: 'right' },
-  avgCard: { borderRadius: 16, padding: 20, alignItems: 'center', marginBottom: 16 },
+  barValue: { fontFamily: fonts.bold, fontSize: 13, width: 28, textAlign: 'right' },
+
+  avgWrap: { alignItems: 'center', gap: 4, paddingVertical: 8 },
+  avgValue: { fontFamily: fonts.serif, fontSize: 48, color: colors.navy },
+  avgLabel: { fontFamily: fonts.regular, fontSize: 12, color: colors.muted, textAlign: 'center' },
 });

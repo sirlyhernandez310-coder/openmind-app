@@ -1,19 +1,33 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, FlatList, TouchableOpacity, StyleSheet, ActivityIndicator } from 'react-native';
+import {
+  View, Text, FlatList, TouchableOpacity,
+  StyleSheet, ActivityIndicator
+} from 'react-native';
 import { collection, query, where, getDocs, doc, updateDoc } from 'firebase/firestore';
 import { auth, db } from '../config/firebase';
+import MindCharacter from '../components/MindCharacter';
+import { colors, fonts, radius, shadow } from '../theme';
+
+const STATUS = {
+  confirmed: { label: 'Confirmada', color: colors.happy   },
+  pending:   { label: 'Pendiente',  color: colors.anxious },
+  cancelled: { label: 'Cancelada',  color: colors.error   },
+};
 
 export default function PsySessionsScreen({ navigation }) {
   const [sessions, setSessions] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState('upcoming');
+  const [loading, setLoading]   = useState(true);
+  const [tab, setTab]           = useState('upcoming');
 
   const load = async () => {
     setLoading(true);
-    const q = query(collection(db, 'sessions'), where('psychologistId', '==', auth.currentUser.uid));
+    const q = query(
+      collection(db, 'sessions'),
+      where('psychologistId', '==', auth.currentUser.uid)
+    );
     const snap = await getDocs(q);
-    const all = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-    all.sort((a, b) => new Date(a.date) - new Date(b.date));
+    const all = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+      .sort((a, b) => new Date(a.date) - new Date(b.date));
     setSessions(all);
     setLoading(false);
   };
@@ -32,80 +46,138 @@ export default function PsySessionsScreen({ navigation }) {
     return d < now || s.status === 'cancelled';
   });
 
-  const statusColors = { confirmed: '#22C55E', pending: '#F59E0B', cancelled: '#EF4444' };
-
   return (
-    <View style={{ flex: 1, backgroundColor: '#F7F0FF' }}>
+    <View style={styles.root}>
       <View style={styles.header}>
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
-          <Text style={{ color: '#fff', fontSize: 20 }}>←</Text>
+          <Text style={styles.backArrow}>←</Text>
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Todas mis sesiones</Text>
+        <Text style={styles.headerTitle}>Mis sesiones</Text>
+        <View style={{ width: 40 }} />
       </View>
 
       <View style={styles.tabs}>
-        {['upcoming', 'past'].map(t => (
-          <TouchableOpacity key={t} onPress={() => setTab(t)} style={[styles.tab, tab === t && styles.tabActive]}>
-            <Text style={[styles.tabText, tab === t && styles.tabTextActive]}>{t === 'upcoming' ? 'Próximas' : 'Pasadas'}</Text>
+        {[['upcoming','Próximas'],['past','Pasadas']].map(([key, label]) => (
+          <TouchableOpacity key={key} onPress={() => setTab(key)}
+            style={[styles.tab, tab === key && styles.tabActive]}>
+            <Text style={[styles.tabText, tab === key && styles.tabTextActive]}>{label}</Text>
           </TouchableOpacity>
         ))}
       </View>
 
-      {loading ? <ActivityIndicator size="large" color="#5B2D8E" style={{ marginTop: 40 }} /> :
-        <FlatList data={filtered} keyExtractor={i => i.id}
-          contentContainerStyle={{ padding: 16, gap: 12 }}
-          ListEmptyComponent={() => (
-            <View style={{ alignItems: 'center', marginTop: 60 }}>
-              <Text style={{ fontSize: 40 }}>📋</Text>
-              <Text style={{ color: '#9B8FAF', marginTop: 10 }}>Sin sesiones {tab === 'upcoming' ? 'próximas' : 'pasadas'}</Text>
-            </View>
-          )}
-          renderItem={({ item: s }) => (
-            <View style={[styles.card, { borderLeftColor: statusColors[s.status] }]}>
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.patientLabel}>Paciente</Text>
-                  <Text style={styles.date}>📅 {new Date(s.date).toLocaleDateString('es-CO', { weekday: 'long', day: 'numeric', month: 'long' })}</Text>
-                  <Text style={styles.time}>🕐 {s.time}</Text>
+      {loading ? (
+        <ActivityIndicator size="large" color={colors.lilac} style={{ marginTop: 40 }} />
+      ) : filtered.length === 0 ? (
+        <View style={styles.emptyWrap}>
+          <MindCharacter mood="calm" size={100} />
+          <Text style={styles.emptyTitle}>
+            Sin sesiones {tab === 'upcoming' ? 'próximas' : 'pasadas'}
+          </Text>
+        </View>
+      ) : (
+        <FlatList
+          data={filtered}
+          keyExtractor={i => i.id}
+          contentContainerStyle={styles.list}
+          showsVerticalScrollIndicator={false}
+          renderItem={({ item: s }) => {
+            const st = STATUS[s.status] || STATUS.pending;
+            return (
+              <View style={styles.card}>
+                <View style={styles.cardHeader}>
+                  <View style={[styles.statusDot, { backgroundColor: st.color }]} />
+                  <Text style={[styles.statusLabel, { color: st.color }]}>{st.label}</Text>
                 </View>
-                <View style={[styles.badge, { backgroundColor: statusColors[s.status] + '22', borderColor: statusColors[s.status] }]}>
-                  <Text style={[{ fontSize: 11, fontWeight: '700' }, { color: statusColors[s.status] }]}>{s.status}</Text>
-                </View>
+                <Text style={styles.patientLabel}>Paciente</Text>
+                <Text style={styles.sessionDate}>
+                  {new Date(s.date).toLocaleDateString('es-CO', {
+                    weekday: 'long', day: 'numeric', month: 'long'
+                  })}
+                </Text>
+                <Text style={styles.sessionTime}>{s.time}</Text>
+
+                {s.videoRoom && s.status !== 'cancelled' && (
+                  <TouchableOpacity
+                    onPress={() => navigation.navigate('VideoCall', { room: s.videoRoom })}
+                    style={styles.videoBtn}>
+                    <Text style={styles.videoBtnText}>Unirse a videollamada</Text>
+                  </TouchableOpacity>
+                )}
+                {s.status === 'pending' && tab === 'upcoming' && (
+                  <TouchableOpacity onPress={() => confirm(s.id)} style={styles.confirmBtn}>
+                    <Text style={styles.confirmBtnText}>Confirmar sesión</Text>
+                  </TouchableOpacity>
+                )}
               </View>
-              {s.videoRoom && (
-                <TouchableOpacity
-                  onPress={() => navigation.navigate('VideoCall', { room: s.videoRoom })}
-                  style={styles.videoBtn}>
-                  <Text style={{ color: '#fff', fontWeight: '700', fontSize: 12 }}>🎥 Unirse a videollamada</Text>
-                </TouchableOpacity>
-              )}
-              {s.status === 'pending' && tab === 'upcoming' && (
-                <TouchableOpacity onPress={() => confirm(s.id)} style={styles.confirmBtn}>
-                  <Text style={{ color: '#22C55E', fontWeight: '700', fontSize: 13 }}>✅ Confirmar sesión</Text>
-                </TouchableOpacity>
-              )}
-            </View>
-          )}
+            );
+          }}
         />
-      }
+      )}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  header: { backgroundColor: '#5B2D8E', paddingTop: 50, paddingBottom: 20, paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center', gap: 14 },
-  backBtn: { backgroundColor: 'rgba(255,255,255,0.2)', borderRadius: 18, width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
-  headerTitle: { color: '#fff', fontSize: 18, fontWeight: '800' },
-  tabs: { flexDirection: 'row', margin: 16, backgroundColor: '#fff', borderRadius: 14, padding: 4, elevation: 2 },
-  tab: { flex: 1, padding: 10, borderRadius: 10, alignItems: 'center' },
-  tabActive: { backgroundColor: '#5B2D8E' },
-  tabText: { fontWeight: '700', color: '#9B8FAF' },
-  tabTextActive: { color: '#fff' },
-  card: { backgroundColor: '#fff', borderRadius: 16, padding: 16, borderLeftWidth: 4, elevation: 2 },
-  patientLabel: { fontSize: 11, color: '#9B8FAF', fontWeight: '700', marginBottom: 4 },
-  date: { fontSize: 13, color: '#1A0A2E', fontWeight: '600', textTransform: 'capitalize' },
-  time: { fontSize: 13, color: '#5A4A6B', marginTop: 2 },
-  badge: { borderRadius: 10, paddingHorizontal: 10, paddingVertical: 4, borderWidth: 1, height: 28, justifyContent: 'center' },
-  videoBtn: { backgroundColor: '#5B2D8E', borderRadius: 10, padding: 10, alignItems: 'center', marginTop: 12 },
-  confirmBtn: { borderWidth: 1.5, borderColor: '#22C55E', borderRadius: 10, padding: 10, alignItems: 'center', marginTop: 8 },
+  root: { flex: 1, backgroundColor: colors.cream },
+  header: {
+    backgroundColor: colors.navy,
+    paddingTop: 56,
+    paddingBottom: 20,
+    paddingHorizontal: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderBottomLeftRadius: 32,
+    borderBottomRightRadius: 32,
+  },
+  backBtn: {
+    width: 40, height: 40, borderRadius: 20,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  backArrow: { color: '#fff', fontSize: 20 },
+  headerTitle: { fontFamily: fonts.serif, fontSize: 22, color: '#fff' },
+
+  tabs: {
+    flexDirection: 'row', margin: 20,
+    backgroundColor: colors.white,
+    borderRadius: radius.md, padding: 4,
+    ...shadow.card,
+  },
+  tab: { flex: 1, padding: 10, borderRadius: radius.sm, alignItems: 'center' },
+  tabActive: { backgroundColor: colors.navy },
+  tabText: { fontFamily: fonts.medium, fontSize: 14, color: colors.muted },
+  tabTextActive: { color: '#fff', fontFamily: fonts.bold },
+
+  list: { paddingHorizontal: 20, gap: 14, paddingBottom: 40 },
+  card: {
+    backgroundColor: colors.white,
+    borderRadius: radius.lg,
+    padding: 18, gap: 6,
+    ...shadow.card,
+  },
+  cardHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 4 },
+  statusDot: { width: 8, height: 8, borderRadius: 4 },
+  statusLabel: { fontFamily: fonts.bold, fontSize: 11, letterSpacing: 0.5 },
+  patientLabel: { fontFamily: fonts.bold, fontSize: 15, color: colors.navy },
+  sessionDate: {
+    fontFamily: fonts.regular, fontSize: 13,
+    color: colors.muted, textTransform: 'capitalize',
+  },
+  sessionTime: { fontFamily: fonts.medium, fontSize: 13, color: colors.muted },
+  videoBtn: {
+    backgroundColor: colors.navy,
+    borderRadius: radius.full,
+    padding: 12, alignItems: 'center', marginTop: 8,
+  },
+  videoBtnText: { fontFamily: fonts.bold, fontSize: 13, color: '#fff' },
+  confirmBtn: {
+    borderWidth: 2, borderColor: colors.happy,
+    borderRadius: radius.full,
+    padding: 12, alignItems: 'center', marginTop: 6,
+  },
+  confirmBtnText: { fontFamily: fonts.bold, fontSize: 13, color: colors.happy },
+
+  emptyWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12, padding: 40 },
+  emptyTitle: { fontFamily: fonts.bold, fontSize: 17, color: colors.navy, textAlign: 'center' },
 });
